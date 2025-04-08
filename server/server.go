@@ -1,104 +1,83 @@
 package main
+
 import (
-	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 
+	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/pion/webrtc/v4"
-	"golang.org/x/net/websocket"
 )
 
-
-const httpsPort = 8443
+const httpsPort = "8443"
 
 var (
-	upgrader=websocket.Upgrader {
-		CheckOrigin:func(r *http.Request) bool {
-			return true
+	upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true // Allow all connections for simplicity
 		},
 	}
-	clients=make(map[*websocket.Conn]bool)
+	clients = make(map[*websocket.Conn]bool) // Connected clients
 )
 
 func websocketHandler(c echo.Context) error {
-	ws, err := upgrader.Upgrade(c.Response(),c.Request(),nil)
-	if err!=nil {
-		log.Println("websocket upgrade error:",err)
+	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	if err != nil {
+		log.Println("websocket upgrade error:", err)
 		return err
 	}
 	defer ws.Close()
 	
-	clients[ws]=true
+	// Register new client
+	clients[ws] = true
 	log.Println("Client connected via websocket")
-
+	
+	// Handle WebSocket messages
 	for {
-		_,message,err:=ws.ReadMessage() 
-		if err!=nil {
-			log.Println("read error:",err)
-			delete(clients,ws)
-			break 
+		_, message, err := ws.ReadMessage()
+		if err != nil {
+			log.Println("read error:", err)
+			delete(clients, ws)
+			break
 		}
 		log.Printf("Received: %s", message)
+		
+		// Broadcast the message to all clients
 		broadcastMessage(message)
-		/*if err := ws.WriteMessage(messageType, message); err != nil {
-			log.Println("write error:", err)
-			break
-		*/
 	}
 	return nil
 }
-		
-// broadcast message to all connected clients
+
+// Broadcast message to all connected clients
 func broadcastMessage(message []byte) {
-	for client:=range clients {
-		err:=client.WriteMessage(websocket.TextMessage,message) 
-		if err!=nil {
-			log.Println("write error:",err)
+	for client := range clients {
+		err := client.WriteMessage(websocket.TextMessage, message)
+		if err != nil {
+			log.Println("write error:", err)
 			client.Close()
-			delete(clients,client)
+			delete(clients, client)
 		}
 	}
 }
 
-
 func main() {
-	e:=echo.New() 
+	e := echo.New()
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
-	e.GET("/",func(c echo.Context) error {
+	
+	// Serve static files
+	e.GET("/", func(c echo.Context) error {
 		return c.File("client/index.html")
 	})
 	e.GET("/webrtc.js", func(c echo.Context) error {
 		return c.File("client/webrtc.js")
 	})
-	e.GET("/ws",websocketHandler)
 	
-	/*
-	tls.Config:=&tls.Config{
-		MinVersion: tls.VersionTLS13,
-	}
-
-	server:=&http.Server {
-		Addr:	httpsPort,
-		TLSConfig: tlsConfig,
-	}
-	*/
-	if _, err := os.Stat("cert.pem"); os.IsNotExist(err) {
-		log.Fatal("cert.pem file not found")
-	}
-	if _, err := os.Stat("key.pem"); os.IsNotExist(err) {
-		log.Fatal("key.pem file not found")
-	}
-	/*
-	log.Printf("Starting Echo HTTPS server on port %s...", httpsPort)
-	if err := e.StartTLS(httpsPort, "cert.pem", "key.pem"); err != nil {
-		log.Fatal("Server failed to start:", err)
-	}
-	*/
+	// WebSocket endpoint
+	e.GET("/ws", websocketHandler)
+	
+	// Print help message
 	printHelp()
 	
 	// Start HTTPS server
