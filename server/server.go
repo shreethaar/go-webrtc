@@ -1,19 +1,29 @@
-package server
+package go-webrtc
 
 import (
 	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/pion/webrtc/v4"
+	"golang.org/x/net/websocket"
 )
 
 
 const httpsPort = 8443
 
+var (
+	upgrader=websocket.Upgrader {
+		CheckOrigin:func(r *http.Request) bool {
+			return true
+		},
+	}
+	clients=make(map[*websocket.Conn]bool)
+)
 
 func websocketHandler(c echo.Context) error {
 	ws, err := upgrader.Upgrade(c.Response(),c.Request(),nil)
